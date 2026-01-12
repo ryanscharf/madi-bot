@@ -20,6 +20,42 @@ impl EventHandler for Handler {
         let content_lower = msg.content.to_lowercase();
         println!("Received message: {}", content_lower);
         
+        // Check for :AC: emoji to complete "ACTIVATED"
+        if msg.content.contains("<:AC:1460415544229363944>") {
+            println!("Detected AC emoji, completing ACTIVATED sequence");
+            
+            let activated_emojis = vec![
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415567457554483),
+                    name: Some("TI".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415586399027200),
+                    name: Some("VA".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415609664835807),
+                    name: Some("TE".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415630074449960),
+                    name: Some("D_".to_string()),
+                },
+            ];
+            
+            for emoji in activated_emojis {
+                if let Err(why) = msg.react(&ctx.http, emoji).await {
+                    println!("Error adding ACTIVATED reaction: {:?}", why);
+                    break;
+                }
+            }
+            return; // Don't check for madi if we already handled AC
+        }
+        
         // Check if the message contains "madi" as a complete word or "madi parsons"
         let has_madi_word = content_lower.split_whitespace()
             .any(|word| word.trim_matches(|c: char| !c.is_alphabetic()) == "madi");
@@ -105,8 +141,7 @@ async fn main() {
 
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES 
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+        | GatewayIntents::DIRECT_MESSAGES;
 
     // Create a new instance of the Client, logging in as a bot
     let mut client = Client::builder(&token, intents)
