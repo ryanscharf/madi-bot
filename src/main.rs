@@ -1,5 +1,6 @@
 use serenity::async_trait;
 use serenity::model::channel::Message;
+use serenity::model::channel::Reaction;
 use serenity::model::gateway::Ready;
 use serenity::model::id::EmojiId;
 use serenity::model::channel::ReactionType;
@@ -19,42 +20,6 @@ impl EventHandler for Handler {
         
         let content_lower = msg.content.to_lowercase();
         println!("Received message: {}", content_lower);
-        
-        // Check for :AC: emoji to complete "ACTIVATED"
-        if msg.content.contains("<:AC:1460415544229363944>") {
-            println!("Detected AC emoji, completing ACTIVATED sequence");
-            
-            let activated_emojis = vec![
-                ReactionType::Custom {
-                    animated: false,
-                    id: EmojiId::new(1460415567457554483),
-                    name: Some("TI".to_string()),
-                },
-                ReactionType::Custom {
-                    animated: false,
-                    id: EmojiId::new(1460415586399027200),
-                    name: Some("VA".to_string()),
-                },
-                ReactionType::Custom {
-                    animated: false,
-                    id: EmojiId::new(1460415609664835807),
-                    name: Some("TE".to_string()),
-                },
-                ReactionType::Custom {
-                    animated: false,
-                    id: EmojiId::new(1460415630074449960),
-                    name: Some("D_".to_string()),
-                },
-            ];
-            
-            for emoji in activated_emojis {
-                if let Err(why) = msg.react(&ctx.http, emoji).await {
-                    println!("Error adding ACTIVATED reaction: {:?}", why);
-                    break;
-                }
-            }
-            return; // Don't check for madi if we already handled AC
-        }
         
         // Check if the message contains "madi" as a complete word or "madi parsons"
         let has_madi_word = content_lower.split_whitespace()
@@ -127,6 +92,54 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
+    }
+
+    async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        // Check if the reaction is the :AC: emoji
+        if let ReactionType::Custom { id, .. } = &reaction.emoji {
+            if id.get() == 1460415544229363944 {
+                println!("Detected AC reaction, completing ACTIVATED sequence");
+                
+                // Get the message that was reacted to
+                let msg = match reaction.message(&ctx.http).await {
+                    Ok(m) => m,
+                    Err(why) => {
+                        println!("Error fetching message: {:?}", why);
+                        return;
+                    }
+                };
+                
+                let activated_emojis = vec![
+                    ReactionType::Custom {
+                        animated: false,
+                        id: EmojiId::new(1460415567457554483),
+                        name: Some("TI".to_string()),
+                    },
+                    ReactionType::Custom {
+                        animated: false,
+                        id: EmojiId::new(1460415586399027200),
+                        name: Some("VA".to_string()),
+                    },
+                    ReactionType::Custom {
+                        animated: false,
+                        id: EmojiId::new(1460415609664835807),
+                        name: Some("TE".to_string()),
+                    },
+                    ReactionType::Custom {
+                        animated: false,
+                        id: EmojiId::new(1460415630074449960),
+                        name: Some("D_".to_string()),
+                    },
+                ];
+                
+                for emoji in activated_emojis {
+                    if let Err(why) = msg.react(&ctx.http, emoji).await {
+                        println!("Error adding ACTIVATED reaction: {:?}", why);
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
