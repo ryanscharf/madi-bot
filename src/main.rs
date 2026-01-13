@@ -131,6 +131,15 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        // Ignore reactions from bots (including itself) to prevent infinite loops
+        if let Some(user_id) = reaction.user_id {
+            if let Ok(user) = user_id.to_user(&ctx.http).await {
+                if user.bot {
+                    return;
+                }
+            }
+        }
+        
         // Check if the reaction is the :AC: emoji (check both server IDs)
         if let ReactionType::Custom { id, .. } = &reaction.emoji {
             let is_ac_emoji = id.get() == 1460415544229363944 || id.get() == 1460433484337385514;
