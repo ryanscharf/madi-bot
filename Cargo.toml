@@ -1,6 +1,6 @@
 [package]
 name = "madi-bot"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
