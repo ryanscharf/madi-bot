@@ -95,8 +95,12 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        println!("Reaction detected: {:?}", reaction.emoji);
+        
         // Check if the reaction is the :AC: emoji
-        if let ReactionType::Custom { id, .. } = &reaction.emoji {
+        if let ReactionType::Custom { id, name, .. } = &reaction.emoji {
+            println!("Custom emoji detected - ID: {}, Name: {:?}", id.get(), name);
+            
             if id.get() == 1460415544229363944 {
                 println!("Detected AC reaction, completing ACTIVATED sequence");
                 
