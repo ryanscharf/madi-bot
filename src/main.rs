@@ -114,6 +114,35 @@ impl EventHandler for Handler {
                 name: Some("madi_knife".to_string()),
             };
             
+            // ACTIVATED emoji sequence
+            let activated_sequence: Vec<ReactionType> = vec![
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415544229363944),
+                    name: Some("AC".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415567457554483),
+                    name: Some("TI".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415586399027200),
+                    name: Some("VA".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415609664835807),
+                    name: Some("TE".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415630074449960),
+                    name: Some("D_".to_string()),
+                },
+            ];
+            
             // Unicode emoji reactions (simple)
             let reactions_unicode: Vec<Vec<char>> = vec![
                 vec!['🥵'],
@@ -129,7 +158,7 @@ impl EventHandler for Handler {
             ];
             
             // Generate random selection in a scope that ends before await
-            let (selected_unicode, use_custom): (Vec<Vec<char>>, bool) = {
+            let (selected_unicode, use_custom, use_activated): (Vec<Vec<char>>, bool, bool) = {
                 let mut rng = rand::thread_rng();
                 let num_reactions = rng.gen_range(1..=3);
                 let mut selected = Vec::new();
@@ -145,7 +174,9 @@ impl EventHandler for Handler {
                 
                 // 20% chance to also add the custom emoji
                 let add_custom = rng.gen_range(0..100) < 20;
-                (selected, add_custom)
+                // 10% chance to add ACTIVATED sequence instead of custom emoji
+                let add_activated = rng.gen_range(0..100) < 10;
+                (selected, add_custom && !add_activated, add_activated)
             }; // rng is dropped here
             
             // Add unicode reactions
@@ -162,6 +193,17 @@ impl EventHandler for Handler {
             if use_custom {
                 if let Err(why) = msg.react(&ctx.http, custom_madi_knife).await {
                     println!("Error adding custom reaction: {:?}", why);
+                }
+            }
+            
+            // Optionally add ACTIVATED sequence
+            if use_activated {
+                println!("Adding ACTIVATED sequence to madi reaction");
+                for emoji in activated_sequence {
+                    if let Err(why) = msg.react(&ctx.http, emoji).await {
+                        println!("Error adding ACTIVATED reaction: {:?}", why);
+                        break;
+                    }
                 }
             }
         }
