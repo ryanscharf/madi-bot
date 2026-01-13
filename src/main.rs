@@ -131,19 +131,11 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-<<<<<<< HEAD
         // Check if the reaction is the :AC: emoji (check both server IDs)
         if let ReactionType::Custom { id, .. } = &reaction.emoji {
             let is_ac_emoji = id.get() == 1460415544229363944 || id.get() == 1460433484337385514;
             
             if is_ac_emoji {
-=======
-        // Check if the reaction is the :AC: emoji
-        if let ReactionType::Custom { id, .. } = &reaction.emoji {
-            if id.get() == 1460415544229363944 {
-                println!("Detected AC reaction, completing ACTIVATED sequence");
-                
->>>>>>> 5e46b55 (fixing watcher)
                 // Get the message that was reacted to
                 let msg = match reaction.message(&ctx.http).await {
                     Ok(m) => m,
@@ -198,13 +190,9 @@ async fn main() {
 
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES 
-<<<<<<< HEAD
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILD_MESSAGE_REACTIONS;
-=======
-        | GatewayIntents::DIRECT_MESSAGES;
->>>>>>> 5e46b55 (fixing watcher)
 
     // Create a new instance of the Client, logging in as a bot
     let mut client = Client::builder(&token, intents)
