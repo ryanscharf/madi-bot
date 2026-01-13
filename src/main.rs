@@ -19,9 +19,11 @@ impl EventHandler for Handler {
         }
         
         let content_lower = msg.content.to_lowercase();
+        println!("Received message: {}", content_lower);
         
-        // Check for "activated" in message content
+        // Check for "activated" in message content (full word)
         if content_lower.contains("activated") {
+            println!("Detected 'activated', adding full ACTIVATED sequence");
             let activated_emojis = vec![
                 ReactionType::Custom {
                     animated: false,
@@ -56,7 +58,42 @@ impl EventHandler for Handler {
                     break;
                 }
             }
-            return; // Don't check for madi if we already handled activated
+            return; // Don't check for other triggers
+        }
+        
+        // Check for "activate" (without the d) in message content
+        if content_lower.contains("activate") && !content_lower.contains("activated") {
+            println!("Detected 'activate', adding ACTIVATE sequence (no D)");
+            let activate_emojis = vec![
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415544229363944),
+                    name: Some("AC".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415567457554483),
+                    name: Some("TI".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415586399027200),
+                    name: Some("VA".to_string()),
+                },
+                ReactionType::Custom {
+                    animated: false,
+                    id: EmojiId::new(1460415609664835807),
+                    name: Some("TE".to_string()),
+                },
+            ];
+            
+            for emoji in activate_emojis {
+                if let Err(why) = msg.react(&ctx.http, emoji).await {
+                    println!("Error adding ACTIVATE reaction: {:?}", why);
+                    break;
+                }
+            }
+            return; // Don't check for other triggers
         }
         
         // Check if the message contains "madi" as a complete word or "madi parsons"
@@ -64,7 +101,11 @@ impl EventHandler for Handler {
             .any(|word| word.trim_matches(|c: char| !c.is_alphabetic()) == "madi");
         let has_madi_parsons = content_lower.contains("madi parsons");
         
+        println!("Has madi word: {}, Has madi parsons: {}", has_madi_word, has_madi_parsons);
+        
         if has_madi_word || has_madi_parsons {
+            println!("Detected madi mention, adding random reactions");
+            
             // Define all possible reaction options
             // Custom madi_knife emoji
             let custom_madi_knife = ReactionType::Custom {
@@ -140,11 +181,15 @@ impl EventHandler for Handler {
             }
         }
         
+        println!("Reaction detected: {:?}", reaction.emoji);
+        
         // Check if the reaction is the :AC: emoji (check both server IDs)
         if let ReactionType::Custom { id, .. } = &reaction.emoji {
             let is_ac_emoji = id.get() == 1460415544229363944 || id.get() == 1460433484337385514;
             
             if is_ac_emoji {
+                println!("Detected :AC: reaction, completing ACTIVATED sequence");
+                
                 // Get the message that was reacted to
                 let msg = match reaction.message(&ctx.http).await {
                     Ok(m) => m,
