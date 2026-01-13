@@ -131,26 +131,11 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-        println!("=== REACTION EVENT ===");
-        println!("Reaction detected: {:?}", reaction.emoji);
-        println!("User ID: {:?}", reaction.user_id);
-        println!("Message ID: {:?}", reaction.message_id);
-        
-        // Check ALL custom emojis and print their IDs
-        match &reaction.emoji {
-            ReactionType::Custom { id, name, animated } => {
-                println!("Custom emoji detected:");
-                println!("  ID: {}", id.get());
-                println!("  Name: {:?}", name);
-                println!("  Animated: {}", animated);
-                println!("  Looking for IDs: 1460415544229363944 or 1460433484337385514");
-                
-                let is_ac_emoji = id.get() == 1460415544229363944 || id.get() == 1460433484337385514;
-                println!("  Match: {}", is_ac_emoji);
-                
-                if is_ac_emoji {
-                    println!("✓ Detected AC reaction, completing ACTIVATED sequence");
-                
+        // Check if the reaction is the :AC: emoji (check both server IDs)
+        if let ReactionType::Custom { id, .. } = &reaction.emoji {
+            let is_ac_emoji = id.get() == 1460415544229363944 || id.get() == 1460433484337385514;
+            
+            if is_ac_emoji {
                 // Get the message that was reacted to
                 let msg = match reaction.message(&ctx.http).await {
                     Ok(m) => m,
