@@ -199,14 +199,13 @@ for reaction_set in selected_unicode {
 }
 
 async fn listen_for_roster_changes(http: Arc<serenity::http::Http>) -> Result<(), PgError> {
-    // 1. Variable Definitions (Ensure these are NOT deleted)
+    // 1. Fetch environment variables at the start to ensure they are in scope
     let db_host = std::env::var("DB_HOST").unwrap_or_else(|_| "192.168.2.66".to_string());
     let db_port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string());
     let db_name = std::env::var("DB_NAME").unwrap_or_else(|_| "tb_sun".to_string());
     let db_user = std::env::var("DB_USERNAME").expect("DB_USERNAME must be set");
     let db_password = std::env::var("DB_PASSWORD").expect("DB_PASSWORD must be set");
     
-    // This was likely missing from your scope
     let roster_channel_id: u64 = std::env::var("ROSTER_CHANNEL_ID")
         .expect("ROSTER_CHANNEL_ID must be set")
         .parse()
@@ -217,19 +216,14 @@ async fn listen_for_roster_changes(http: Arc<serenity::http::Http>) -> Result<()
         db_host, db_port, db_name, db_user, db_password
     );
     
-    println!("Connecting to PostgreSQL...");
-    
     // 2. Establish Connection
     let (client, connection) = tokio_postgres::connect(&connection_string, NoTls).await?;
-    
-    // 3. Setup Notification Channel
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<tokio_postgres::Notification>();
 
-    // 4. Background Task
+    // 3. Background Task to handle the connection
     tokio::spawn(async move {
-        // FIX: Re-declare as mutable inside the move block
+        // Fix: Shadow 'connection' as mutable so poll_fn can use it
         let mut connection = connection; 
-        
         let mut stream = futures_util::stream::poll_fn(move |cx| connection.poll_message(cx));
         
         while let Some(msg_result) = stream.next().await {
@@ -239,20 +233,21 @@ async fn listen_for_roster_changes(http: Arc<serenity::http::Http>) -> Result<()
                 }
                 Ok(_) => {}, 
                 Err(e) => {
-                    eprintln!("Postgres connection task error: {}", e);
+                    eprintln!("Postgres connection error: {}", e);
                     break;
                 }
             }
         }
     });
 
-    // 5. Start Listening
+    // 4. Start Listening
     client.execute("LISTEN roster_changes", &[]).await?;    
-    println!("Now listening for roster change notifications...");
+    println!(">>> System active: Waiting for roster_changes NOTIFY from database...");
     
-    // 6. Event-Driven Loop
+    // 5. Event-Driven Loop
     while let Some(_notification) = rx.recv().await {
-        println!("Database notification received!");
+        // LOG: Detected the database signal
+        println!(">>> [DATABASE EVENT] Change notification received!");
 
         let rows = client.query(
             "SELECT id, event_type, number, name, ao_datetime, event_time 
@@ -271,11 +266,20 @@ async fn listen_for_roster_changes(http: Arc<serenity::http::Http>) -> Result<()
                 event_time: row.get::<_, chrono::DateTime<chrono::Utc>>(5).to_string(),
             };
             
-            let message = format_roster_change_message(&event);
-            let channel = ChannelId::new(roster_channel_id); // This now has roster_channel_id in scope
+            // LOG: Print details of what was found in the database
+            println!(">>> [ROSTER CHANGE] Type: {}, Name: {}, Number: {}", 
+                     event.event_type, event.name, event.number);
             
+            let message = format_roster_change_message(&event);
+            
+            // LOG: Show exactly what will be posted to Discord
+            println!(">>> [DISCORD PREVIEW]\n---\n{}\n---", message);
+
+            let channel = ChannelId::new(roster_channel_id);
             if let Err(why) = channel.say(&http, &message).await {
-                eprintln!("Error sending to Discord: {:?}", why);
+                eprintln!(">>> [ERROR] Failed to send to Discord: {:?}", why);
+            } else {
+                println!(">>> [SUCCESS] Message posted to Discord channel: {}", roster_channel_id);
             }
         }
     }
