@@ -307,7 +307,10 @@ fn format_roster_change_message(event: &RosterChangeEvent) -> String {
 async fn main() {
     // Load environment variables from .env file
     dotenv().ok();
-    
+    println!("Loaded env vars:");
+    println!("DB_USERNAME: {}", std::env::var("DB_USERNAME").unwrap_or_else(|_| "NOT SET".to_string()));
+    println!("ROSTER_CHANNEL_ID: {}", std::env::var("ROSTER_CHANNEL_ID").unwrap_or_else(|_| "NOT SET".to_string()));
+
     // Configure the client with your bot token
     let token = std::env::var("DISCORD_TOKEN")
         .expect("Expected a token in the environment variable DISCORD_TOKEN");
