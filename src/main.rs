@@ -241,45 +241,35 @@ async fn listen_for_roster_changes(http: Arc<serenity::http::Http>) -> Result<()
     });
 
     // 4. Start Listening
-    client.execute("LISTEN roster_changes", &[]).await?;    
-    println!(">>> System active: Waiting for roster_changes NOTIFY from database...");
+   client.execute("LISTEN roster_changes", &[]).await?;    
+    println!(">>> System active: Waiting for roster_changes notifications...");
     
-    // 5. Event-Driven Loop
-    while let Some(_notification) = rx.recv().await {
-        // LOG: Detected the database signal
-        println!(">>> [DATABASE EVENT] Change notification received!");
-
-        let rows = client.query(
-            "SELECT id, event_type, number, name, ao_datetime, event_time 
-             FROM roster_events 
-             ORDER BY event_time DESC 
-             LIMIT 1", 
-            &[]
-        ).await?;
+    while let Some(notification) = rx.recv().await {
+        // 1. Get the JSON payload from the notification
+        let payload = notification.payload();
         
-        for row in rows {
-            let event = RosterChangeEvent {
-                event_type: row.get(1),
-                number: row.get(2),
-                name: row.get(3),
-                ao_datetime: row.get::<_, chrono::DateTime<chrono::Utc>>(4).to_string(),
-                event_time: row.get::<_, chrono::DateTime<chrono::Utc>>(5).to_string(),
-            };
-            
-            // LOG: Print details of what was found in the database
-            println!(">>> [ROSTER CHANGE] Type: {}, Name: {}, Number: {}", 
-                     event.event_type, event.name, event.number);
-            
-            let message = format_roster_change_message(&event);
-            
-            // LOG: Show exactly what will be posted to Discord
-            println!(">>> [DISCORD PREVIEW]\n---\n{}\n---", message);
+        // 2. Try to parse the JSON into our RosterChangeEvent struct
+        match serde_json::from_str::<RosterChangeEvent>(payload) {
+            Ok(event) => {
+                println!(">>> [DATABASE EVENT] New change detected via payload!");
+                println!(">>> [ROSTER CHANGE] Type: {}, Name: {}, Number: {}", 
+                         event.event_type, event.name, event.number);
+                
+                let message = format_roster_change_message(&event);
+                
+                // LOG: Show exactly what is being sent
+                println!(">>> [DISCORD PREVIEW]\n---\n{}\n---", message);
 
-            let channel = ChannelId::new(roster_channel_id);
-            if let Err(why) = channel.say(&http, &message).await {
-                eprintln!(">>> [ERROR] Failed to send to Discord: {:?}", why);
-            } else {
-                println!(">>> [SUCCESS] Message posted to Discord channel: {}", roster_channel_id);
+                let channel = ChannelId::new(roster_channel_id);
+                if let Err(why) = channel.say(&http, &message).await {
+                    eprintln!(">>> [ERROR] Failed to send to Discord: {:?}", why);
+                } else {
+                    println!(">>> [SUCCESS] Message posted for: {}", event.name);
+                }
+            },
+            Err(e) => {
+                eprintln!(">>> [ERROR] Failed to parse notification payload: {}", e);
+                // Fallback: If JSON parsing fails, you could keep your old SELECT LIMIT 1 logic here
             }
         }
     }
