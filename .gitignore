@@ -1,2 +1,14 @@
 /target
 .env
+
+# Rust/Cargo
+**/*.rs.bk
+Cargo.lock.bk
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# VS artifacts
+.vs/
