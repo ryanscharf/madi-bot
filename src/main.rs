@@ -386,7 +386,7 @@ pub async fn run_survey_watcher(http: Arc<serenity::http::Http>) {
     }
 }
 
-async fn fetch_current_match_date(client: &reqwest::Client) -> Result<String, Box<dyn std::error::Error>> {    let html = client
+async fn fetch_current_match_date(client: &reqwest::Client) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {    let html = client
         .get("https://www.tampabaysunfc.com/post-match-survey/")
         .header("User-Agent", "MadiBot/1.0")
         .send()
@@ -446,7 +446,7 @@ async fn main() {
         }
     });
 
-    tokio::spawn(run_survey_watcher(http.clone()));
+    tokio::spawn(run_survey_watcher(http_survey));
 
     // Start the Discord bot
     if let Err(why) = client.start().await {
