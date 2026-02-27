@@ -386,8 +386,7 @@ pub async fn run_survey_watcher(http: Arc<serenity::http::Http>) {
     }
 }
 
-async fn fetch_current_match_date(client: &reqwest::Client) -> anyhow::Result<String> {
-    let html = client
+async fn fetch_current_match_date(client: &reqwest::Client) -> Result<String, Box<dyn std::error::Error>> {    let html = client
         .get("https://www.tampabaysunfc.com/post-match-survey/")
         .header("User-Agent", "MadiBot/1.0")
         .send()
@@ -405,7 +404,7 @@ async fn fetch_current_match_date(client: &reqwest::Client) -> anyhow::Result<St
         }
     }
 
-    Err(anyhow::anyhow!("Could not find match date in survey dropdown"))
+    Err("Could not find match date in survey dropdown".into())
 }
 
 #[tokio::main]
@@ -434,7 +433,7 @@ async fn main() {
 
     // Get HTTP client before moving client into start()
     let http = client.http.clone();
-    
+
     let http_survey = http.clone();
     // Spawn roster change listener in background
     tokio::spawn(async move {
