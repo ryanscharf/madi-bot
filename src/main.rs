@@ -296,6 +296,117 @@ fn format_roster_change_message(event: &RosterChangeEvent) -> String {
         event.number, event.name
     )
 }
+// add survey_info shit. scrape with rust instead of R.
+
+pub async fn run_survey_watcher(http: Arc<serenity::http::Http>) {
+    let db_host = std::env::var("DB_HOST").unwrap_or_else(|_| "192.168.2.66".to_string());
+    let db_port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string());
+    let db_name = std::env::var("DB_NAME").unwrap_or_else(|_| "tb_sun".to_string());
+    let db_user = std::env::var("DB_USERNAME").expect("DB_USERNAME must be set");
+    let db_password = std::env::var("DB_PASSWORD").expect("DB_PASSWORD must be set");
+
+    let survey_channel_id: u64 = std::env::var("SURVEY_CHANNEL_ID")
+        .expect("SURVEY_CHANNEL_ID must be set")
+        .parse()
+        .expect("SURVEY_CHANNEL_ID must be a valid u64");
+
+    let connection_string = format!(
+        "host={} port={} dbname={} user={} password={}",
+        db_host, db_port, db_name, db_user, db_password
+    );
+
+    let (client, connection) = tokio_postgres::connect(&connection_string, NoTls)
+        .await
+        .expect("Failed to connect to database for survey watcher");
+
+    // Drive the connection in the background
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("Survey watcher DB connection error: {}", e);
+        }
+    });
+
+    let reqwest_client = reqwest::Client::new();
+
+    loop {
+        match fetch_current_match_date(&reqwest_client).await {
+            Ok(current) => {
+                // Read stored value
+                let stored = client
+                    .query_opt(
+                        "SELECT value FROM public.survey_info WHERE key = 'survey_match_date'",
+                        &[],
+                    )
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|row| row.get::<_, String>(0));
+
+                let changed = match &stored {
+                    Some(prev) => prev != &current,
+                    None => true, // first run
+                };
+
+                if changed {
+                    if stored.is_some() {
+                        // Actually changed — send Discord notification
+                        let msg = format!(
+                            "🌞 **Post-Match Survey Updated!**\n\
+                             The survey now shows: **{}**\n\
+                             Fill it out here: https://www.tampabaysunfc.com/post-match-survey/",
+                            current
+                        );
+                        let channel = ChannelId::new(survey_channel_id);
+                        if let Err(e) = channel.say(&http, &msg).await {
+                            eprintln!("Failed to send survey notification: {}", e);
+                        } else {
+                            println!(">>> [SURVEY] Notification sent for: {}", current);
+                        }
+                    } else {
+                        println!(">>> [SURVEY] First run, storing initial value: {}", current);
+                    }
+
+                    // Upsert the new value
+                    if let Err(e) = client
+                        .execute(
+                            "INSERT INTO public.survey_info (key, value) VALUES ('survey_match_date', $1)
+                             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                            &[&current],
+                        )
+                        .await
+                    {
+                        eprintln!("Failed to store survey match date: {}", e);
+                    }
+                }
+            }
+            Err(e) => eprintln!("Failed to fetch survey page: {}", e),
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(900)).await;
+    }
+}
+
+async fn fetch_current_match_date(client: &reqwest::Client) -> anyhow::Result<String> {
+    let html = client
+        .get("https://www.tampabaysunfc.com/post-match-survey/")
+        .header("User-Agent", "MadiBot/1.0")
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let document = scraper::Html::parse_document(&html);
+    let selector = scraper::Selector::parse("select option").unwrap();
+
+    for element in document.select(&selector) {
+        let text = element.text().collect::<String>().trim().to_string();
+        if !text.is_empty() && !text.contains("Select Choice") {
+            return Ok(text);
+        }
+    }
+
+    Err(anyhow::anyhow!("Could not find match date in survey dropdown"))
+}
 
 #[tokio::main]
 async fn main() {
@@ -323,7 +434,8 @@ async fn main() {
 
     // Get HTTP client before moving client into start()
     let http = client.http.clone();
-
+    
+    let http_survey = http.clone();
     // Spawn roster change listener in background
     tokio::spawn(async move {
         loop {
@@ -334,6 +446,8 @@ async fn main() {
             }
         }
     });
+
+    tokio::spawn(run_survey_watcher(http.clone()));
 
     // Start the Discord bot
     if let Err(why) = client.start().await {
