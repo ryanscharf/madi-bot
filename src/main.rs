@@ -332,15 +332,16 @@ pub async fn run_survey_watcher(http: Arc<serenity::http::Http>) {
         match fetch_current_match_date(&reqwest_client).await {
             Ok(current) => {
                 // Read stored value
-                let stored = client
+                let stored = match client
                     .query_opt(
                         "SELECT value FROM public.survey_info WHERE key = 'survey_match_date'",
                         &[],
                     )
                     .await
-                    .ok()
-                    .flatten()
-                    .map(|row| row.get::<_, String>(0));
+                {
+                    Ok(row) => row.map(|r| r.get::<_, String>(0)),
+                    Err(e) => { eprintln!("Failed to read survey match date: {:?}", e); None }
+                };
 
                 let changed = match &stored {
                     Some(prev) => prev != &current,
@@ -375,7 +376,7 @@ pub async fn run_survey_watcher(http: Arc<serenity::http::Http>) {
                         )
                         .await
                     {
-                        eprintln!("Failed to store survey match date: {}", e);
+                        eprintln!("Failed to store survey match date: {:?}", e);
                     }
                 }
             }
