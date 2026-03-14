@@ -22,6 +22,49 @@ const EMOJI_D: u64 = 1460415630074449960;
 const EMOJI_MADI_KNIFE: u64 = 1421229718023442563;
 const EMOJI_AC_ALT: u64 = 1460433484337385514;
 
+// Convert x.com and twitter.com links to xcancel.com
+fn convert_twitter_links(text: &str) -> Option<String> {
+    let replaced = replace_twitter_links(text);
+    if replaced != text {
+        Some(replaced)
+    } else {
+        None
+    }
+}
+
+fn replace_twitter_links(text: &str) -> String {
+    let mut result = String::new();
+    let mut remaining = text;
+    loop {
+        let lower = remaining.to_lowercase();
+        let pos = lower.find("https://x.com/")
+            .or_else(|| lower.find("http://x.com/"))
+            .or_else(|| lower.find("https://twitter.com/"))
+            .or_else(|| lower.find("http://twitter.com/"));
+        match pos {
+            None => {
+                result.push_str(remaining);
+                break;
+            }
+            Some(i) => {
+                result.push_str(&remaining[..i]);
+                let url_start = &remaining[i..];
+                let end = url_start.find(|c: char| c.is_whitespace()).unwrap_or(url_start.len());
+                let url = &url_start[..end];
+                let lower_url = url.to_lowercase();
+                let converted = if lower_url.starts_with("https://x.com/") || lower_url.starts_with("http://x.com/") {
+                    url.replacen("x.com", "xcancel.com", 1)
+                } else {
+                    url.replacen("twitter.com", "xcancel.com", 1)
+                };
+                result.push_str(&converted);
+                remaining = &url_start[end..];
+            }
+        }
+    }
+    result
+}
+
 // Helper function to create custom emoji
 fn custom_emoji(id: u64, name: &str) -> ReactionType {
     ReactionType::Custom {
@@ -84,7 +127,14 @@ impl EventHandler for Handler {
         
         let content_lower = msg.content.to_lowercase();
         println!("Received message: {}", content_lower);
-        
+
+        // Convert twitter/x links to xcancel
+        if let Some(converted) = convert_twitter_links(&msg.content) {
+            if let Err(why) = msg.channel_id.say(&ctx.http, converted).await {
+                println!("Error sending xcancel link: {:?}", why);
+            }
+        }
+
         // Check for "activated" (full word)
         if content_lower.contains("activated") {
             println!("Detected 'activated', adding full ACTIVATED sequence");
