@@ -1,3 +1,5 @@
+mod shop_watcher;
+
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::channel::Reaction;
@@ -498,6 +500,30 @@ async fn main() {
     });
 
     tokio::spawn(run_survey_watcher(http_survey));
+
+    let shop_channel_id: u64 = std::env::var("SHOP_CHANNEL_ID")
+        .expect("SHOP_CHANNEL_ID not set")
+        .parse()
+        .expect("SHOP_CHANNEL_ID must be a valid u64");
+
+    let db_url = {
+        let host = std::env::var("DB_HOST").unwrap_or_else(|_| "192.168.2.66".to_string());
+        let port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string());
+        let name = std::env::var("DB_NAME").unwrap_or_else(|_| "tb_sun".to_string());
+        let user = std::env::var("DB_USERNAME").expect("DB_USERNAME must be set");
+        let password = std::env::var("DB_PASSWORD").expect("DB_PASSWORD must be set");
+        format!("postgres://{}:{}@{}:{}/{}", user, password, host, port, name)
+    };
+
+    let shop_pool = sqlx::PgPool::connect(&db_url)
+        .await
+        .expect("Failed to connect to Postgres for shop watcher");
+
+    tokio::spawn(shop_watcher::run(
+        shop_pool,
+        Arc::clone(&client.http),
+        shop_channel_id,
+    ));
 
     // Start the Discord bot
     if let Err(why) = client.start().await {
