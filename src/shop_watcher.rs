@@ -108,11 +108,6 @@ fn format_alert(product: &ShopifyProduct) -> String {
 pub async fn run(pool: PgPool, http: Arc<Http>, channel_id: u64) {
     let client = Client::new();
 
-    if let Err(e) = ensure_table(&pool).await {
-        eprintln!("[shop_watcher] Failed to create table: {}", e);
-        return;
-    }
-
     // Seed without alerting
     println!("[shop_watcher] Seeding existing products...");
     match fetch_products(&client).await {
