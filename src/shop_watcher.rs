@@ -77,7 +77,7 @@ async fn find_and_store_new<'a>(
         let result = sqlx::query(
             "INSERT INTO shop_known_products (shopify_id, title, handle, last_seen)
              VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (shopify_id) DO UPDATE SET last_seen = NOW()",
+             ON CONFLICT (shopify_id) DO NOTHING",
         )
         .bind(product.id as i64)
         .bind(&product.title)
@@ -87,6 +87,13 @@ async fn find_and_store_new<'a>(
 
         if result.rows_affected() > 0 {
             new_items.push(product);
+        } else {
+            sqlx::query(
+                "UPDATE shop_known_products SET last_seen = NOW() WHERE shopify_id = $1",
+            )
+            .bind(product.id as i64)
+            .execute(pool)
+            .await?;
         }
     }
     Ok(new_items)
