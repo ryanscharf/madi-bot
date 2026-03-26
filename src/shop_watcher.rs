@@ -75,9 +75,9 @@ async fn find_and_store_new<'a>(
     let mut new_items = Vec::new();
     for product in products {
         let result = sqlx::query(
-            "INSERT INTO shop_known_products (shopify_id, title, handle)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (shopify_id) DO NOTHING",
+            "INSERT INTO shop_known_products (shopify_id, title, handle, last_seen)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (shopify_id) DO UPDATE SET last_seen = NOW()",
         )
         .bind(product.id as i64)
         .bind(&product.title)
