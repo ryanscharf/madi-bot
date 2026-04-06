@@ -400,6 +400,10 @@ pub async fn run_survey_watcher(http: Arc<serenity::http::Http>) {
                     None => true, // first run
                 };
 
+                if !changed {
+                    println!(">>> [SURVEY] No update. Current value: {}", current);
+                }
+
                 if changed {
                     if stored.is_some() {
                         // Actually changed — send Discord notification
