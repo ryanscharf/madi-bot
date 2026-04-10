@@ -1,4 +1,5 @@
 mod shop_watcher;
+mod game_notes_watcher;
 
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -524,9 +525,20 @@ async fn main() {
         .expect("Failed to connect to Postgres for shop watcher");
 
     tokio::spawn(shop_watcher::run(
-        shop_pool,
+        shop_pool.clone(),
         Arc::clone(&client.http),
         shop_channel_id,
+    ));
+
+    let game_notes_channel_id: u64 = std::env::var("GAME_NOTES_CHANNEL_ID")
+        .expect("GAME_NOTES_CHANNEL_ID not set")
+        .parse()
+        .expect("GAME_NOTES_CHANNEL_ID must be a valid u64");
+
+    tokio::spawn(game_notes_watcher::run(
+        shop_pool,
+        Arc::clone(&client.http),
+        game_notes_channel_id,
     ));
 
     // Start the Discord bot
