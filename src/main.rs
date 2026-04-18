@@ -68,6 +68,44 @@ fn replace_twitter_links(text: &str) -> String {
     result
 }
 
+// Convert instagram.com links to zzinstagram.com
+fn convert_instagram_links(text: &str) -> Option<String> {
+    let replaced = replace_instagram_links(text);
+    if replaced != text {
+        Some(replaced)
+    } else {
+        None
+    }
+}
+
+fn replace_instagram_links(text: &str) -> String {
+    let mut result = String::new();
+    let mut remaining = text;
+    loop {
+        let lower = remaining.to_lowercase();
+        let pos = lower.find("https://www.instagram.com/")
+            .or_else(|| lower.find("http://www.instagram.com/"))
+            .or_else(|| lower.find("https://instagram.com/"))
+            .or_else(|| lower.find("http://instagram.com/"));
+        match pos {
+            None => {
+                result.push_str(remaining);
+                break;
+            }
+            Some(i) => {
+                result.push_str(&remaining[..i]);
+                let url_start = &remaining[i..];
+                let end = url_start.find(|c: char| c.is_whitespace()).unwrap_or(url_start.len());
+                let url = &url_start[..end];
+                let converted = url.replacen("instagram.com", "zzinstagram.com", 1);
+                result.push_str(&converted);
+                remaining = &url_start[end..];
+            }
+        }
+    }
+    result
+}
+
 // Helper function to create custom emoji
 fn custom_emoji(id: u64, name: &str) -> ReactionType {
     ReactionType::Custom {
@@ -135,6 +173,13 @@ impl EventHandler for Handler {
         if let Some(converted) = convert_twitter_links(&msg.content) {
             if let Err(why) = msg.channel_id.say(&ctx.http, converted).await {
                 println!("Error sending xcancel link: {:?}", why);
+            }
+        }
+
+        // Convert instagram.com links to zzinstagram.com
+        if let Some(converted) = convert_instagram_links(&msg.content) {
+            if let Err(why) = msg.channel_id.say(&ctx.http, converted).await {
+                println!("Error sending zzinstagram link: {:?}", why);
             }
         }
 
