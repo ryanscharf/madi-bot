@@ -55,10 +55,11 @@ fn replace_twitter_links(text: &str) -> String {
                 let end = url_start.find(|c: char| c.is_whitespace()).unwrap_or(url_start.len());
                 let url = &url_start[..end];
                 let lower_url = url.to_lowercase();
+                let twitter_domain = std::env::var("TWITTER_EMBED_DOMAIN").unwrap_or_else(|_| "xcancel.com".to_string());
                 let converted = if lower_url.starts_with("https://x.com/") || lower_url.starts_with("http://x.com/") {
-                    url.replacen("x.com", "xcancel.com", 1)
+                    url.replacen("x.com", &twitter_domain, 1)
                 } else {
-                    url.replacen("twitter.com", "xcancel.com", 1)
+                    url.replacen("twitter.com", &twitter_domain, 1)
                 };
                 result.push_str(&converted);
                 remaining = &url_start[end..];
@@ -68,7 +69,7 @@ fn replace_twitter_links(text: &str) -> String {
     result
 }
 
-// Convert instagram.com links to zzinstagram.com
+// Convert instagram.com links to the domain set by INSTAGRAM_EMBED_DOMAIN
 fn convert_instagram_links(text: &str) -> Option<String> {
     let replaced = replace_instagram_links(text);
     if replaced != text {
@@ -97,7 +98,8 @@ fn replace_instagram_links(text: &str) -> String {
                 let url_start = &remaining[i..];
                 let end = url_start.find(|c: char| c.is_whitespace()).unwrap_or(url_start.len());
                 let url = &url_start[..end];
-                let converted = url.replacen("instagram.com", "zzinstagram.com", 1);
+                let instagram_domain = std::env::var("INSTAGRAM_EMBED_DOMAIN").unwrap_or_else(|_| "zzinstagram.com".to_string());
+                let converted = url.replacen("instagram.com", &instagram_domain, 1);
                 result.push_str(&converted);
                 remaining = &url_start[end..];
             }
@@ -176,10 +178,10 @@ impl EventHandler for Handler {
             }
         }
 
-        // Convert instagram.com links to zzinstagram.com
+        // Convert instagram.com links to the domain set by INSTAGRAM_EMBED_DOMAIN
         if let Some(converted) = convert_instagram_links(&msg.content) {
             if let Err(why) = msg.channel_id.say(&ctx.http, converted).await {
-                println!("Error sending zzinstagram link: {:?}", why);
+                println!("Error sending instagram embed link: {:?}", why);
             }
         }
 
