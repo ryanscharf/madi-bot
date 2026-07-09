@@ -519,6 +519,8 @@ async fn main() {
     println!("Loaded env vars:");
     println!("DB_USERNAME: {}", std::env::var("DB_USERNAME").unwrap_or_else(|_| "NOT SET".to_string()));
     println!("ROSTER_CHANNEL_ID: {}", std::env::var("ROSTER_CHANNEL_ID").unwrap_or_else(|_| "NOT SET".to_string()));
+    println!("TWITTER_EMBED_DOMAIN: {}", std::env::var("TWITTER_EMBED_DOMAIN").unwrap_or_else(|_| "xcancel.com (default)".to_string()));
+    println!("INSTAGRAM_EMBED_DOMAIN: {}", std::env::var("INSTAGRAM_EMBED_DOMAIN").unwrap_or_else(|_| "zzinstagram.com (default)".to_string()));
 
     // Configure the client with your bot token
     let token = std::env::var("DISCORD_TOKEN")
