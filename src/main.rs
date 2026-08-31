@@ -25,6 +25,22 @@ const EMOJI_D: u64 = 1460415630074449960;
 const EMOJI_MADI_KNIFE: u64 = 1421229718023442563;
 const EMOJI_AC_ALT: u64 = 1460433484337385514;
 
+// Returns true unless the env var is explicitly set to a falsey value
+// ("0", "false", "no", "off"). Missing/empty means enabled.
+fn env_flag_enabled(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(val) => {
+            let v = val.trim().to_lowercase();
+            if v.is_empty() {
+                default
+            } else {
+                !matches!(v.as_str(), "0" | "false" | "no" | "off")
+            }
+        }
+        Err(_) => default,
+    }
+}
+
 // Convert x.com and twitter.com links to xcancel.com
 fn convert_twitter_links(text: &str) -> Option<String> {
     let replaced = replace_twitter_links(text);
@@ -171,10 +187,13 @@ impl EventHandler for Handler {
         let content_lower = msg.content.to_lowercase();
         println!("Received message: {}", content_lower);
 
-        // Convert twitter/x links to xcancel
-        if let Some(converted) = convert_twitter_links(&msg.content) {
-            if let Err(why) = msg.channel_id.say(&ctx.http, converted).await {
-                println!("Error sending xcancel link: {:?}", why);
+        // Convert twitter/x links for embedding (disabled by default; xcancel is
+        // no longer reliable). Enable via TWITTER_LINK_CONVERSION_ENABLED=true.
+        if env_flag_enabled("TWITTER_LINK_CONVERSION_ENABLED", false) {
+            if let Some(converted) = convert_twitter_links(&msg.content) {
+                if let Err(why) = msg.channel_id.say(&ctx.http, converted).await {
+                    println!("Error sending twitter embed link: {:?}", why);
+                }
             }
         }
 
@@ -519,6 +538,7 @@ async fn main() {
     println!("Loaded env vars:");
     println!("DB_USERNAME: {}", std::env::var("DB_USERNAME").unwrap_or_else(|_| "NOT SET".to_string()));
     println!("ROSTER_CHANNEL_ID: {}", std::env::var("ROSTER_CHANNEL_ID").unwrap_or_else(|_| "NOT SET".to_string()));
+    println!("TWITTER_LINK_CONVERSION_ENABLED: {}", env_flag_enabled("TWITTER_LINK_CONVERSION_ENABLED", false));
     println!("TWITTER_EMBED_DOMAIN: {}", std::env::var("TWITTER_EMBED_DOMAIN").unwrap_or_else(|_| "xcancel.com (default)".to_string()));
     println!("INSTAGRAM_EMBED_DOMAIN: {}", std::env::var("INSTAGRAM_EMBED_DOMAIN").unwrap_or_else(|_| "zzinstagram.com (default)".to_string()));
 

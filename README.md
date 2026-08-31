@@ -29,5 +29,6 @@ In the OAuth2 URL generator, check `bot` and in bot permissions check: `Read Mes
 | `DB_HOST` | `192.168.2.66` | PostgreSQL host |
 | `DB_PORT` | `5432` | PostgreSQL port |
 | `DB_NAME` | `tb_sun` | PostgreSQL database name |
-| `TWITTER_EMBED_DOMAIN` | `xcancel.com` | Domain used when converting Twitter/X links for embedding |
+| `TWITTER_LINK_CONVERSION_ENABLED` | `false` | Enable rewriting Twitter/X links to `TWITTER_EMBED_DOMAIN`. Disabled by default since xcancel.com is no longer reliable. Set to `true`/`1`/`on` to enable |
+| `TWITTER_EMBED_DOMAIN` | `xcancel.com` | Domain used when converting Twitter/X links for embedding (only when `TWITTER_LINK_CONVERSION_ENABLED` is true) |
 | `INSTAGRAM_EMBED_DOMAIN` | `zzinstagram.com` | Domain used when converting Instagram links for embedding |
