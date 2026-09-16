@@ -1,5 +1,6 @@
 mod shop_watcher;
 mod game_notes_watcher;
+mod pdf_availability;
 
 use serenity::async_trait;
 use serenity::model::channel::Message;
