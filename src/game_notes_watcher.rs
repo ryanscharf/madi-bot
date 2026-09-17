@@ -179,6 +179,53 @@ async fn screenshot_or_log(client: &Client, label: &str, url: &str) -> Option<Ve
     }
 }
 
+/// Extracts a leading date token like "9.18" or "8/13" from the start of a
+/// doc title (e.g. "9.18 vs DC Power", "8.15 TB vs DAL").
+fn extract_date_token(title: &str) -> Option<&str> {
+    let end = title
+        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '/'))
+        .unwrap_or(title.len());
+    let token = &title[..end];
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
+}
+
+/// Picks which of the opponent's own listed docs is for this specific
+/// matchup against Tampa Bay. Unlike Tampa's own section (where the current
+/// week's doc happens to be listed first), other teams' pages list docs in
+/// no reliable order — e.g. DC Power FC's page listed "DCvCAR" before
+/// "DC vs TB (9.18)" — so picking the first one silently posted the wrong
+/// team's data. Match instead on: the opponent's title mentioning Tampa Bay
+/// ("TB"/"TAMPA"), or sharing the same leading date token as Tampa's own
+/// title for this doc. If neither signal narrows it to exactly one doc,
+/// don't guess — a wrong screenshot is worse than a missing one.
+fn select_opponent_doc<'a>(opp_docs: &'a [GameNotesDoc], tampa_title: &str) -> Option<&'a GameNotesDoc> {
+    let tb_matches: Vec<&GameNotesDoc> = opp_docs
+        .iter()
+        .filter(|d| {
+            let upper = d.title.to_ascii_uppercase();
+            upper.contains("TB") || upper.contains("TAMPA")
+        })
+        .collect();
+    if tb_matches.len() == 1 {
+        return Some(tb_matches[0]);
+    }
+
+    if let Some(date_token) = extract_date_token(tampa_title) {
+        let candidates = if tb_matches.is_empty() { opp_docs.iter().collect::<Vec<_>>() } else { tb_matches };
+        let date_matches: Vec<&GameNotesDoc> =
+            candidates.into_iter().filter(|d| d.title.contains(date_token)).collect();
+        if date_matches.len() == 1 {
+            return Some(date_matches[0]);
+        }
+    }
+
+    None
+}
+
 /// Resolves and fetches the opponent's own availability screenshot, if the
 /// opponent can be identified and their doc found on the page.
 async fn opponent_screenshot(client: &Client, html: &str, title: &str) -> Option<(String, Vec<u8>)> {
@@ -192,7 +239,15 @@ async fn opponent_screenshot(client: &Client, html: &str, title: &str) -> Option
         }
     };
 
-    let opp_doc = opp_docs.first()?;
+    let Some(opp_doc) = select_opponent_doc(&opp_docs, title) else {
+        let titles: Vec<&str> = opp_docs.iter().map(|d| d.title.as_str()).collect();
+        println!(
+            "[game_notes_watcher] Couldn't uniquely match {team}'s doc for \"{title}\" among: {:?}",
+            titles
+        );
+        return None;
+    };
+
     let png = screenshot_or_log(client, team, &opp_doc.url).await?;
     Some((team.to_string(), png))
 }
@@ -313,5 +368,42 @@ mod tests {
     fn unrecognized_or_missing_opponent_returns_none() {
         assert_eq!(parse_opponent_team("Week 3 Notes"), None);
         assert_eq!(parse_opponent_team("9.18 vs Some Unknown Team"), None);
+    }
+
+    fn doc(title: &str) -> GameNotesDoc {
+        GameNotesDoc {
+            title: title.to_string(),
+            url: format!("https://example.com/{}.pdf", title),
+        }
+    }
+
+    #[test]
+    fn selects_the_right_doc_among_unordered_opponent_docs() {
+        // Real scenario: DC Power FC's page listed these in this order, and
+        // picking the first one (DCvCAR) silently posted the wrong team's
+        // availability table instead of the actual Tampa Bay matchup doc.
+        let docs = vec![
+            doc("DCvCAR"),
+            doc("DCvsDAL 8/13"),
+            doc("DC vs TB (9.18)"),
+            doc("DCvJAX"),
+            doc("BKNvDC 8.21"),
+            doc("DCxLEX 8.29"),
+        ];
+        let selected = select_opponent_doc(&docs, "9.18 vs DC Power").unwrap();
+        assert_eq!(selected.title, "DC vs TB (9.18)");
+    }
+
+    #[test]
+    fn falls_back_to_date_when_no_tb_mention() {
+        let docs = vec![doc("DCvCAR 8.29"), doc("DCvsDAL 8.13"), doc("DCvJAX 9.4")];
+        let selected = select_opponent_doc(&docs, "8.29 TB vs DC Power").unwrap();
+        assert_eq!(selected.title, "DCvCAR 8.29");
+    }
+
+    #[test]
+    fn refuses_to_guess_when_ambiguous() {
+        let docs = vec![doc("DCvCAR"), doc("DCvJAX")];
+        assert!(select_opponent_doc(&docs, "9.18 vs DC Power").is_none());
     }
 }

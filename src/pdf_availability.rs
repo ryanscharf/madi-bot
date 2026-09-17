@@ -9,6 +9,8 @@ const HEADING_CANDIDATES: &[&str] = &[
     "PLAYER AVAILABILITY",
     "AVAILABILITY REPORT",
     "UNAVAILABILITY",
+    "INJURY REPORT",
+    "INJURY",
 ];
 
 /// Status values and injury/reason words used as anchors to find the table's
@@ -308,6 +310,7 @@ mod real_pdf_tests {
         ("sportingjax", "https://cdn2.sportngin.com/attachments/document/24da-3613507/Gainbridge_Super_League_Away_Match_Notes_8.15.26.pdf"),
         ("lexington", "https://cdn1.sportngin.com/attachments/document/f070-3619639/8.29.26_LEXvsDC_MatchNotes.pdf"),
         ("dcpower", "https://cdn3.sportngin.com/attachments/document/0821-3613980/DC_Power_Game_Notes_8.15.26.pdf"),
+        ("dcpower_vs_tb", "https://cdn2.sportngin.com/attachments/document/3d3c-3626856/DC_Power_Football_Club_Game_Notes__DC_vs_Tampa_.pdf"),
         ("ftlauderdale", "https://cdn3.sportngin.com/attachments/document/7371-3613469/1_-_FTLvsJAX_8.15.pdf"),
     ];
 
