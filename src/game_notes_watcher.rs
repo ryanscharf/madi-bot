@@ -252,6 +252,65 @@ async fn opponent_screenshot(client: &Client, html: &str, title: &str) -> Option
     Some((team.to_string(), png))
 }
 
+/// How long to keep retrying a missing opponent screenshot before giving up
+/// on it — Tampa's own notes sometimes go out well before the opponent's,
+/// but if the opponent still hasn't posted anything a week and a half after
+/// Tampa did, the match has likely already been played.
+const OPPONENT_RETRY_WINDOW_DAYS: i32 = 10;
+
+/// Re-attempts the opponent screenshot for any doc whose alert already went
+/// out without one (Tampa's notes are often posted before the opponent's own
+/// notes exist yet). Posts a follow-up message for each one that now
+/// succeeds, using the same page HTML already fetched this tick.
+async fn retry_pending_opponent_screenshots(pool: &PgPool, client: &Client, http: &Http, channel_id: u64, html: &str) {
+    let pending = sqlx::query_as::<_, (String, String)>(
+        "SELECT url, title FROM game_notes_documents
+         WHERE opponent_posted = FALSE
+           AND first_seen_at > now() - make_interval(days => $1)",
+    )
+    .bind(OPPONENT_RETRY_WINDOW_DAYS)
+    .fetch_all(pool)
+    .await;
+
+    let rows = match pending {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("[game_notes_watcher] Pending-opponent query error: {}", e);
+            return;
+        }
+    };
+
+    if rows.is_empty() {
+        return;
+    }
+
+    println!("[game_notes_watcher] Retrying {} pending opponent screenshot(s)...", rows.len());
+    let channel = ChannelId::new(channel_id);
+
+    for (url, title) in rows {
+        let Some((team, png)) = opponent_screenshot(client, html, &title).await else {
+            continue;
+        };
+
+        let filename = format!("{}_availability.png", team.replace(' ', "_").to_lowercase());
+        let msg = format!("📋 **{team} Player Availability Posted**\n(for **{title}**)");
+        let builder = CreateMessage::new().content(&msg).add_file(CreateAttachment::bytes(png, filename));
+
+        match channel.send_message(http, builder).await {
+            Ok(_) => {
+                if let Err(e) = sqlx::query("UPDATE game_notes_documents SET opponent_posted = TRUE WHERE url = $1")
+                    .bind(&url)
+                    .execute(pool)
+                    .await
+                {
+                    eprintln!("[game_notes_watcher] Failed to mark opponent_posted for {url}: {e}");
+                }
+            }
+            Err(e) => eprintln!("[game_notes_watcher] Discord error posting {team} follow-up: {:?}", e),
+        }
+    }
+}
+
 pub async fn run(pool: PgPool, http: Arc<Http>, channel_id: u64) {
     let client = Client::new();
 
@@ -273,59 +332,85 @@ pub async fn run(pool: PgPool, http: Arc<Http>, channel_id: u64) {
         sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
 
         println!("[game_notes_watcher] Checking for new Tampa Bay Sun FC game notes...");
-        match fetch_page_html(&client).await {
-            Err(e) => eprintln!("[game_notes_watcher] Fetch error: {}", e),
-            Ok(html) => match extract_team_docs(&html, TAMPA_BAY_HEADING, TAMPA_BAY_TAG) {
-                Err(e) => eprintln!("[game_notes_watcher] Parse error: {}", e),
-                Ok(docs) => match find_and_store_changes(&pool, &docs).await {
-                    Err(e) => eprintln!("[game_notes_watcher] DB error: {}", e),
-                    Ok(changes) => {
-                        if changes.is_empty() {
-                            println!("[game_notes_watcher] No changes found.");
-                        } else {
-                            println!("[game_notes_watcher] {} change(s) found", changes.len());
-                            let channel = ChannelId::new(channel_id);
-                            for change in &changes {
-                                let (doc, msg) = match change {
-                                    DocChange::New(doc) => (*doc, format_new(doc)),
-                                    DocChange::Updated { doc, old_title } => {
-                                        (*doc, format_updated(doc, old_title))
-                                    }
-                                };
+        let html = match fetch_page_html(&client).await {
+            Ok(html) => html,
+            Err(e) => {
+                eprintln!("[game_notes_watcher] Fetch error: {}", e);
+                continue;
+            }
+        };
 
-                                let mut attachments = Vec::new();
-
-                                if let Some(png) =
-                                    screenshot_or_log(&client, "Tampa Bay Sun FC", &doc.url).await
-                                {
-                                    attachments
-                                        .push(CreateAttachment::bytes(png, "tampa_bay_availability.png"));
+        match extract_team_docs(&html, TAMPA_BAY_HEADING, TAMPA_BAY_TAG) {
+            Err(e) => eprintln!("[game_notes_watcher] Parse error: {}", e),
+            Ok(docs) => match find_and_store_changes(&pool, &docs).await {
+                Err(e) => eprintln!("[game_notes_watcher] DB error: {}", e),
+                Ok(changes) => {
+                    if changes.is_empty() {
+                        println!("[game_notes_watcher] No changes found.");
+                    } else {
+                        println!("[game_notes_watcher] {} change(s) found", changes.len());
+                        let channel = ChannelId::new(channel_id);
+                        for change in &changes {
+                            let (doc, msg) = match change {
+                                DocChange::New(doc) => (*doc, format_new(doc)),
+                                DocChange::Updated { doc, old_title } => {
+                                    (*doc, format_updated(doc, old_title))
                                 }
+                            };
 
-                                if let Some((team, png)) =
-                                    opponent_screenshot(&client, &html, &doc.title).await
+                            let mut attachments = Vec::new();
+
+                            if let Some(png) =
+                                screenshot_or_log(&client, "Tampa Bay Sun FC", &doc.url).await
+                            {
+                                attachments
+                                    .push(CreateAttachment::bytes(png, "tampa_bay_availability.png"));
+                            }
+
+                            if let Some((team, png)) =
+                                opponent_screenshot(&client, &html, &doc.title).await
+                            {
+                                let filename =
+                                    format!("{}_availability.png", team.replace(' ', "_").to_lowercase());
+                                attachments.push(CreateAttachment::bytes(png, filename));
+                            } else {
+                                // Opponent's notes often aren't posted yet when
+                                // Tampa's own alert goes out — flag this doc so
+                                // retry_pending_opponent_screenshots picks it
+                                // back up on a later tick once they are.
+                                println!(
+                                    "[game_notes_watcher] No opponent screenshot yet for title: {} — will keep retrying",
+                                    doc.title
+                                );
+                                if let Err(e) = sqlx::query(
+                                    "UPDATE game_notes_documents SET opponent_posted = FALSE WHERE url = $1",
+                                )
+                                .bind(&doc.url)
+                                .execute(&pool)
+                                .await
                                 {
-                                    let filename =
-                                        format!("{}_availability.png", team.replace(' ', "_").to_lowercase());
-                                    attachments.push(CreateAttachment::bytes(png, filename));
-                                } else {
-                                    println!(
-                                        "[game_notes_watcher] No opponent screenshot for title: {}",
-                                        doc.title
+                                    eprintln!(
+                                        "[game_notes_watcher] Failed to mark opponent_posted pending for {}: {}",
+                                        doc.url, e
                                     );
                                 }
+                            }
 
-                                println!("[game_notes_watcher] Alerting:\n{}", msg);
-                                let builder = CreateMessage::new().content(&msg).add_files(attachments);
-                                if let Err(e) = channel.send_message(&http, builder).await {
-                                    eprintln!("[game_notes_watcher] Discord error: {:?}", e);
-                                }
+                            println!("[game_notes_watcher] Alerting:\n{}", msg);
+                            let builder = CreateMessage::new().content(&msg).add_files(attachments);
+                            if let Err(e) = channel.send_message(&http, builder).await {
+                                eprintln!("[game_notes_watcher] Discord error: {:?}", e);
                             }
                         }
                     }
-                },
+                }
             },
         }
+
+        // Independent of whether any new Tampa notes came out this tick,
+        // check whether a previously-missing opponent screenshot can now be
+        // fetched — reuses the same page fetch above, no extra request.
+        retry_pending_opponent_screenshots(&pool, &client, &http, channel_id, &html).await;
     }
 }
 
