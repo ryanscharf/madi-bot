@@ -252,6 +252,21 @@ async fn opponent_screenshot(client: &Client, html: &str, title: &str) -> Option
     Some((team.to_string(), png))
 }
 
+/// Posts the opponent's availability screenshot as its own standalone
+/// message. Always kept separate from Tampa's own alert message — Discord
+/// crams multiple image attachments on one message into small, awkwardly
+/// cropped thumbnails, which is much harder to read than one image per post.
+async fn post_opponent_availability(http: &Http, channel_id: u64, content: &str, team: &str, png: Vec<u8>) -> anyhow::Result<()> {
+    let filename = format!("{}_availability.png", team.replace(' ', "_").to_lowercase());
+    let channel = ChannelId::new(channel_id);
+    let builder = CreateMessage::new().content(content).add_file(CreateAttachment::bytes(png, filename));
+    channel
+        .send_message(http, builder)
+        .await
+        .map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    Ok(())
+}
+
 /// How long to keep retrying a missing opponent screenshot before giving up
 /// on it — Tampa's own notes sometimes go out well before the opponent's,
 /// but if the opponent still hasn't posted anything a week and a half after
@@ -285,19 +300,15 @@ async fn retry_pending_opponent_screenshots(pool: &PgPool, client: &Client, http
     }
 
     println!("[game_notes_watcher] Retrying {} pending opponent screenshot(s)...", rows.len());
-    let channel = ChannelId::new(channel_id);
 
     for (url, title) in rows {
         let Some((team, png)) = opponent_screenshot(client, html, &title).await else {
             continue;
         };
 
-        let filename = format!("{}_availability.png", team.replace(' ', "_").to_lowercase());
         let msg = format!("📋 **{team} Player Availability Posted**\n(for **{title}**)");
-        let builder = CreateMessage::new().content(&msg).add_file(CreateAttachment::bytes(png, filename));
-
-        match channel.send_message(http, builder).await {
-            Ok(_) => {
+        match post_opponent_availability(http, channel_id, &msg, &team, png).await {
+            Ok(()) => {
                 if let Err(e) = sqlx::query("UPDATE game_notes_documents SET opponent_posted = TRUE WHERE url = $1")
                     .bind(&url)
                     .execute(pool)
@@ -358,8 +369,12 @@ pub async fn run(pool: PgPool, http: Arc<Http>, channel_id: u64) {
                                 }
                             };
 
+                            // Tampa's own screenshot rides along on the main
+                            // alert; the opponent's is always posted as its
+                            // own separate message — Discord crams multiple
+                            // image attachments on one message into small,
+                            // hard-to-read thumbnails.
                             let mut attachments = Vec::new();
-
                             if let Some(png) =
                                 screenshot_or_log(&client, "Tampa Bay Sun FC", &doc.url).await
                             {
@@ -367,12 +382,24 @@ pub async fn run(pool: PgPool, http: Arc<Http>, channel_id: u64) {
                                     .push(CreateAttachment::bytes(png, "tampa_bay_availability.png"));
                             }
 
+                            println!("[game_notes_watcher] Alerting:\n{}", msg);
+                            let builder = CreateMessage::new().content(&msg).add_files(attachments);
+                            if let Err(e) = channel.send_message(&http, builder).await {
+                                eprintln!("[game_notes_watcher] Discord error: {:?}", e);
+                            }
+
                             if let Some((team, png)) =
                                 opponent_screenshot(&client, &html, &doc.title).await
                             {
-                                let filename =
-                                    format!("{}_availability.png", team.replace(' ', "_").to_lowercase());
-                                attachments.push(CreateAttachment::bytes(png, filename));
+                                let opp_msg = format!("📋 **{team} Player Availability**");
+                                if let Err(e) =
+                                    post_opponent_availability(&http, channel_id, &opp_msg, &team, png).await
+                                {
+                                    eprintln!(
+                                        "[game_notes_watcher] Discord error posting {team} availability: {:?}",
+                                        e
+                                    );
+                                }
                             } else {
                                 // Opponent's notes often aren't posted yet when
                                 // Tampa's own alert goes out — flag this doc so
@@ -394,12 +421,6 @@ pub async fn run(pool: PgPool, http: Arc<Http>, channel_id: u64) {
                                         doc.url, e
                                     );
                                 }
-                            }
-
-                            println!("[game_notes_watcher] Alerting:\n{}", msg);
-                            let builder = CreateMessage::new().content(&msg).add_files(attachments);
-                            if let Err(e) = channel.send_message(&http, builder).await {
-                                eprintln!("[game_notes_watcher] Discord error: {:?}", e);
                             }
                         }
                     }
